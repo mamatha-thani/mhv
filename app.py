@@ -1,71 +1,67 @@
-import os
-import boto3
+from flask import Flask, render_template, request
 import psycopg2
-from flask import Flask, request, render_template, redirect, flash
+import os
+from werkzeug.utils import secure_filename
+from datetime import datetime
 
-app = Flask(__name__)
-app.secret_key = 'secretkey'
-UPLOAD_FOLDER = 'uploads'
+app = Flask(_name_)
+
+# Database Configuration (PostgreSQL on EC2/RDS)
+DB_HOST = "postgres.c78emaw4caq6.ap-south-1.rds.amazonaws.com"  # Update with EC2 or RDS endpoint
+DB_NAME = "postgres"
+DB_USER = "postgres"
+DB_PASSWORD = "Thanimamatha"
+
+# Connect to PostgreSQL
+def get_db_connection():
+    return psycopg2.connect(
+        host=DB_HOST,
+        database=postgres,
+        user=postgres,
+        password=Thanimamatha 
+    )
+
+# Set upload folder
+UPLOAD_FOLDER = "/home/ubuntu/uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Configure AWS S3
-s3 = boto3.client(
-    's3',
-    aws_access_key_id='YOUR_AWS_ACCESS_KEY',
-    aws_secret_access_key='YOUR_AWS_SECRET_KEY',
-    region_name='ap-south-1'
-)
-S3_BUCKET_NAME = 'your-s3-bucket-name'
+@app.route("/")
+def home():
+    return render_template("index.html")
 
-# Configure Database
-conn = psycopg2.connect(
-    host='your-db-host',
-    database='your-db-name',
-    user='your-db-user',
-    password='your-db-password'
-)
-cur = conn.cursor()
-
-# Ensure uploads folder exists
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-
-# Route for Form
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-# Route to Handle Form Submission
-@app.route('/submit', methods=['POST'])
+@app.route("/submit", methods=["POST"])
 def submit():
-    username = request.form['username']
-    password = request.form['password']
-    email = request.form['email']
-    photo = request.files['photo']
+    name = request.form.get("name")
+    email = request.form.get("email")
+    image = request.files.get("image")  # Image is optional
 
-    if photo:
-        photo_filename = photo.filename
-        photo_path = os.path.join(app.config['UPLOAD_FOLDER'], photo_filename)
-        photo.save(photo_path)
+    if not (name and email):
+        return "Name and email are required!", 400
 
-        # Upload to S3
-        try:
-            s3.upload_file(photo_path, S3_BUCKET_NAME, photo_filename)
-            photo_url = f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/{photo_filename}"
-            os.remove(photo_path)  # Remove the photo after upload
+    image_path = None  # Default to None if no image is uploaded
 
-            # Save to Database
-            cur.execute("INSERT INTO users (username, password, email, photo_url) VALUES (%s, %s, %s, %s)",
-                        (username, password, email, photo_url))
-            conn.commit()
-            flash('Data and Photo uploaded successfully!')
-        except Exception as e:
-            flash(f"Error: {e}")
-    else:
-        flash('Photo upload failed.')
+    if image:
+        filename = secure_filename(image.filename)
+        local_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        image.save(local_path)
+        image_path = local_path  # Store local path in DB
 
-    return redirect('/')
+    # Save data to database with local image path
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        cursor.execute(
+            "INSERT INTO users (name, email, image_url, created_at) VALUES (%s, %s, %s, %s)",
+            (name, email, image_path, datetime.utcnow())
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+    except Exception as e:
+        return f"Error saving to database: {str(e)}", 500
 
-if __name__ == '__main__':
-    app.run(debug=True)
+    return render_template('success.html', name=name, image_path=image_path)
 
+if _name_ == "_main_":
+    app.run(host="0.0.0.0", port=5003)
